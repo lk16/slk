@@ -8,9 +8,5 @@ import (
 )
 
 func main() {
-	slack, err := slk.NewSlk(os.Args[1:])
-
-	// TODO
-	_ = slack
-	_ = err
+	slk.NewSlk(os.Args[1:]).Run()
 }
