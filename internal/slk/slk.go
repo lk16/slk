@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 
 	"github.com/lk16/slk/internal/models"
@@ -19,7 +20,10 @@ const (
 
 // Slk is the controlling struct of the slk application
 type Slk struct {
-	config models.Config
+	config       models.Config
+	client       *slack.RTM
+	userCache    map[string]slack.User
+	channelCache map[string]slack.Channel
 }
 
 func getConfigPath(configPathflag string) (string, error) {
@@ -105,43 +109,132 @@ func NewSlk(cmdLineArgs []string) *Slk {
 
 }
 
+// OnIncomingEvent handles incoming updates from the slack client
+func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
+	var logMsg string
+
+	switch ev := event.Data.(type) {
+
+	case *slack.ConnectedEvent:
+		logMsg = fmt.Sprintf("%s connected", ev.Info.User.Name)
+
+	case *slack.MessageEvent:
+		logMsg = fmt.Sprintf("#%s %s: %s", slk.ChannelName(ev.Channel), slk.UserName(ev.User), ev.Msg.Text)
+
+	case *slack.PresenceChangeEvent:
+		logMsg = fmt.Sprintf("%s is now %s", ev.User, ev.Presence)
+
+	case *slack.RTMError:
+		logMsg = ev.Error()
+
+	// this spams the log
+	case *slack.LatencyReport:
+		return
+
+	// ignored events
+	case *slack.ConnectionErrorEvent:
+	case *slack.ConnectingEvent:
+	case *slack.DisconnectedEvent:
+	case *slack.InvalidAuthEvent:
+	case *slack.UnmarshallingErrorEvent:
+	case *slack.MessageTooLongEvent:
+	case *slack.RateLimitEvent:
+	case *slack.OutgoingErrorEvent:
+	case *slack.IncomingEventError:
+	case *slack.AckErrorEvent:
+	}
+
+	// log.Printf("%+v", event.Data)
+	log.Printf("%16s %s\n", event.Type, logMsg)
+}
+
+// LoadChannels loads a map of all channels
+func (slk *Slk) LoadChannels() {
+
+	cursor := ""
+	iterations := 0
+
+	channels := make([]slack.Channel, 0)
+
+	for cursor != "" || iterations == 0 {
+		var channelsChunk []slack.Channel
+		var err error
+		channelsChunk, cursor, err = slk.client.GetConversations(
+			&slack.GetConversationsParameters{
+				Cursor:          cursor,
+				ExcludeArchived: "true",
+				Limit:           1000,
+				Types: []string{
+					"public_channel",
+					"private_channel",
+					"im",
+					"mpim",
+				},
+			},
+		)
+
+		// TODO
+		if err != nil {
+			crash(err)
+		}
+
+		channels = append(channels, channelsChunk...)
+		iterations++
+	}
+
+	slk.channelCache = make(map[string]slack.Channel, len(channels))
+	for _, channel := range channels {
+		slk.channelCache[channel.ID] = channel
+	}
+
+	log.Printf("Loaded %d channels", len(channels))
+}
+
+// LoadUsers loads a map of all non-deleted users
+func (slk *Slk) LoadUsers() {
+	users, err := slk.client.GetUsers()
+	if err != nil {
+		crash(err) // TODO
+	}
+
+	slk.userCache = make(map[string]slack.User, len(users))
+	for _, user := range users {
+		if !user.Deleted {
+			slk.userCache[user.ID] = user
+		}
+	}
+
+	log.Printf("Loaded %d users", len(users))
+}
+
+// UserName looks up a username
+func (slk *Slk) UserName(code string) string {
+	if user, ok := slk.userCache[code]; ok {
+		return user.RealName
+	}
+	return "???"
+}
+
+// ChannelName looks up a channelname
+func (slk *Slk) ChannelName(code string) string {
+	if channel, ok := slk.channelCache[code]; ok {
+		return channel.Name
+	}
+	return "???"
+}
+
 // Run runs the slk application as configured
 func (slk *Slk) Run() {
 	api := slack.New(slk.config.APIToken)
 
-	rtm := api.NewRTM()
-	go rtm.ManageConnection()
+	slk.client = api.NewRTM()
 
-	for msg := range rtm.IncomingEvents {
-		fmt.Print("Event Received: ")
-		switch ev := msg.Data.(type) {
+	go slk.client.ManageConnection()
 
-		case *slack.HelloEvent:
-			// Ignore hello
+	slk.LoadChannels()
+	slk.LoadUsers()
 
-		case *slack.ConnectedEvent:
-			fmt.Println("Infos:", ev.Info)
-			fmt.Println("Connection counter:", ev.ConnectionCount)
-
-		case *slack.MessageEvent:
-			fmt.Printf("Message: %v\n", ev)
-
-		case *slack.PresenceChangeEvent:
-			fmt.Printf("Presence Change: %v\n", ev)
-
-		case *slack.LatencyReport:
-			fmt.Printf("Current latency: %v\n", ev.Value)
-
-		case *slack.RTMError:
-			fmt.Printf("Error: %s\n", ev.Error())
-
-		case *slack.InvalidAuthEvent:
-			fmt.Printf("Invalid credentials")
-			return
-
-		default:
-			fmt.Printf("Unhandled event %s\n", msg.Type)
-		}
+	for event := range slk.client.IncomingEvents {
+		slk.OnIncomingEvent(event)
 	}
-
 }
