@@ -51,63 +51,65 @@ func getConfigPath(configPathflag string) (string, error) {
 	return "", errors.Wrap(err, "no configuration file found")
 }
 
-func crash(err error) {
-	fmt.Printf("slk crashed: %s\n", err.Error())
-	os.Exit(1)
-}
-
 // NewSlk creates a new slk from commandline arguments
 func NewSlk(cmdLineArgs []string) *Slk {
 
 	var flagSet flag.FlagSet
+	slk := &Slk{}
 
 	var configPathFlag string
 	flagSet.StringVar(&configPathFlag, "config", "", "path to configuration file")
 
 	err := flagSet.Parse(cmdLineArgs)
 	if err != nil {
-		crash(errors.Wrap(err, "parsing commandline arguments failed"))
+		slk.Crash(errors.Wrap(err, "parsing commandline arguments failed"))
 		return nil
 	}
 
 	configPath, err := getConfigPath(configPathFlag)
 	if err != nil {
-		crash(errors.Wrap(err, "could not get config path"))
+		slk.Crash(errors.Wrap(err, "could not get config path"))
 		return nil
 	}
 
 	fileInfo, err := os.Stat(configPath)
 	if err != nil {
-		crash(errors.Wrap(err, "could not stat config path"))
+		slk.Crash(errors.Wrap(err, "could not stat config path"))
 		return nil
 	}
 
 	if fileInfo.Mode().Perm() != configFileExpectedPerms {
-		crash(fmt.Errorf("expected %s to have perms %#o",
+		slk.Crash(fmt.Errorf("expected %s to have perms %#o",
 			configPath, configFileExpectedPerms))
 		return nil
 	}
 
 	configContent, err := ioutil.ReadFile(configPath)
 	if err != nil {
-		crash(errors.Wrap(err, "config file json parsing error"))
+		slk.Crash(errors.Wrap(err, "config file json parsing error"))
 		return nil
 	}
 
 	var config models.Config
 	err = json.Unmarshal(configContent, &config)
 	if err != nil {
-		crash(errors.Wrap(err, "json parsing error"))
+		slk.Crash(errors.Wrap(err, "json parsing error"))
 	}
 
 	if config.APIToken == "" {
-		crash(errors.New("empty api token"))
+		slk.Crash(errors.New("empty api token"))
 	}
 
-	return &Slk{
-		config: config}
-
+	slk.config = config
+	return slk
 }
+
+// Crash is a utility function that terminates the program with error exit code
+func (slk *Slk) Crash(err error) {
+	fmt.Printf("slk slk.Crashed: %s\n", err.Error())
+	os.Exit(1)
+}
+
 
 // OnIncomingEvent handles incoming updates from the slack client
 func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
@@ -175,7 +177,7 @@ func (slk *Slk) LoadChannels() {
 
 		// TODO
 		if err != nil {
-			crash(err)
+			slk.Crash(err)
 		}
 
 		channels = append(channels, channelsChunk...)
@@ -194,7 +196,7 @@ func (slk *Slk) LoadChannels() {
 func (slk *Slk) LoadUsers() {
 	users, err := slk.client.GetUsers()
 	if err != nil {
-		crash(err) // TODO
+		slk.Crash(err) // TODO
 	}
 
 	slk.userCache = make(map[string]slack.User, len(users))
