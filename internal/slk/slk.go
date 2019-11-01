@@ -34,89 +34,51 @@ type Slk struct {
 	channelCache map[string]slack.Channel
 }
 
-func getConfigPath(configPathflag string) (string, error) {
-
-	if configPathflag != "" {
-		return configPathflag, nil
-	}
-
-	homeFolder, err := os.UserHomeDir()
-	if err != nil {
-		return "", errors.Wrap(err, "getting home folder failed")
-	}
-
-	paths := []string{
-		fmt.Sprintf("./%s", configBaseName),
-		fmt.Sprintf("%s/%s", homeFolder, configBaseName)}
-
-	for _, path := range paths {
-		_, err := os.Stat(path)
-		if err == nil {
-			return path, nil
-		}
-	}
-
-	return "", errors.Wrap(err, "no configuration file found")
-}
-
 // NewSlk creates a new slk from commandline arguments
-func NewSlk(cmdLineArgs []string) *Slk {
+func NewSlk(cmdLineArgs []string) (*Slk, error) {
 
 	var flagSet flag.FlagSet
 	slk := &Slk{}
 
-	flagSet.StringVar(&slk.flags.configPath, "config", "", "path to configuration file")
+	homeFolder, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errors.Wrap(err, "getting home folder failed")
+	}
+
+	defaultConfigPath := fmt.Sprintf("%s/%s", homeFolder, configBaseName)
+
+	flagSet.StringVar(&slk.flags.configPath, "config", defaultConfigPath, "path to configuration file")
 	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
 	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
 
-	err := flagSet.Parse(cmdLineArgs)
-	if err != nil {
-		slk.Crash(errors.Wrap(err, "parsing commandline arguments failed"))
-		return nil
+	if err := flagSet.Parse(cmdLineArgs); err != nil {
+		return nil, errors.Wrap(err, "parsing commandline arguments failed")
 	}
 
-	configPath, err := getConfigPath(slk.flags.configPath)
+	fileInfo, err := os.Stat(slk.flags.configPath)
 	if err != nil {
-		slk.Crash(errors.Wrap(err, "could not get config path"))
-		return nil
-	}
-
-	fileInfo, err := os.Stat(configPath)
-	if err != nil {
-		slk.Crash(errors.Wrap(err, "could not stat config path"))
-		return nil
+		return nil, errors.Wrap(err, "could not stat config path")
 	}
 
 	if fileInfo.Mode().Perm() != configFileExpectedPerms {
-		slk.Crash(fmt.Errorf("expected %s to have perms %#o",
-			configPath, configFileExpectedPerms))
-		return nil
+		return nil, fmt.Errorf("expected %s to have perms %#o", slk.flags.configPath, configFileExpectedPerms)
 	}
 
-	configContent, err := ioutil.ReadFile(configPath)
+	configContent, err := ioutil.ReadFile(slk.flags.configPath)
 	if err != nil {
-		slk.Crash(errors.Wrap(err, "config file json parsing error"))
-		return nil
+		return nil, errors.Wrap(err, "config file json parsing error")
 	}
 
-	var config models.Config
-	err = json.Unmarshal(configContent, &config)
+	err = json.Unmarshal(configContent, &slk.config)
 	if err != nil {
-		slk.Crash(errors.Wrap(err, "json parsing error"))
+		return nil, errors.Wrap(err, "json parsing error")
 	}
 
-	if config.APIToken == "" {
-		slk.Crash(errors.New("empty api token"))
+	if slk.config.APIToken == "" {
+		return nil, errors.New("empty api token")
 	}
 
-	slk.config = config
-	return slk
-}
-
-// Crash is a utility function that terminates the program with error exit code
-func (slk *Slk) Crash(err error) {
-	fmt.Printf("Slk crashed: %s\n", err.Error())
-	os.Exit(1)
+	return slk, nil
 }
 
 // OnIncomingEvent handles incoming updates from the slack client
@@ -141,6 +103,7 @@ func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
 	case *slack.LatencyReport:
 		return
 
+	// TODO this list is not complete
 	// ignored events
 	case *slack.ConnectionErrorEvent:
 	case *slack.ConnectingEvent:
@@ -154,7 +117,6 @@ func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
 	case *slack.AckErrorEvent:
 	}
 
-	// log.Printf("%+v", event.Data)
 	log.Printf("%16s %s\n", event.Type, logMsg)
 }
 
@@ -183,9 +145,8 @@ func (slk *Slk) LoadChannels() {
 			},
 		)
 
-		// TODO
 		if err != nil {
-			slk.Crash(err)
+			// TODO
 		}
 
 		channels = append(channels, channelsChunk...)
@@ -203,7 +164,7 @@ func (slk *Slk) LoadChannels() {
 func (slk *Slk) LoadUsers() {
 	users, err := slk.client.GetUsers()
 	if err != nil {
-		slk.Crash(err) // TODO
+		// TODO
 	}
 
 	slk.userCache = make(map[string]slack.User, len(users))
@@ -231,33 +192,42 @@ func (slk *Slk) ChannelName(code string) string {
 	return "???"
 }
 
+func (slk *Slk) listUsers() error {
+	slk.LoadUsers()
+	for _, user := range slk.userCache {
+		fmt.Printf("%30s %40s %30s\n", user.RealName, user.Profile.Email, user.Profile.Title)
+	}
+	return nil
+}
+
+func (slk *Slk) listChannels() error {
+	slk.LoadChannels()
+	for _, channel := range slk.channelCache {
+		if channel.IsMpIM {
+			continue
+		}
+		visibility := "public"
+		if channel.IsPrivate {
+			visibility = "private"
+		}
+		fmt.Printf("%40s %8s %4d members\n", channel.Name, visibility, channel.NumMembers)
+	}
+	return nil
+}
+
 // Run runs the slk application as configured
-func (slk *Slk) Run() {
+func (slk *Slk) Run() error {
+
 	api := slack.New(slk.config.APIToken)
 
 	slk.client = api.NewRTM()
 
 	if slk.flags.listUsers {
-		slk.LoadUsers()
-		for _, user := range slk.userCache {
-			fmt.Printf("%30s %40s %30s\n", user.RealName, user.Profile.Email, user.Profile.Title)
-		}
-		return
+		return slk.listUsers()
 	}
 
 	if slk.flags.listChannels {
-		slk.LoadChannels()
-		for _, channel := range slk.channelCache {
-			if channel.IsMpIM {
-				continue
-			}
-			visibility := "public"
-			if channel.IsPrivate {
-				visibility = "private"
-			}
-			fmt.Printf("%40s %8s %4d members\n", channel.Name, visibility, channel.NumMembers)
-		}
-		return
+		return slk.listChannels()
 	}
 
 	go slk.client.ManageConnection()
@@ -268,4 +238,6 @@ func (slk *Slk) Run() {
 	for event := range slk.client.IncomingEvents {
 		slk.OnIncomingEvent(event)
 	}
+
+	return nil
 }
