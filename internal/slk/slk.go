@@ -18,8 +18,16 @@ const (
 	configFileExpectedPerms = 0600
 )
 
+// Flags contains all flag values
+type Flags struct {
+	configPath   string
+	listUsers    bool
+	listChannels bool
+}
+
 // Slk is the controlling struct of the slk application
 type Slk struct {
+	flags        Flags
 	config       models.Config
 	client       *slack.RTM
 	userCache    map[string]slack.User
@@ -57,8 +65,9 @@ func NewSlk(cmdLineArgs []string) *Slk {
 	var flagSet flag.FlagSet
 	slk := &Slk{}
 
-	var configPathFlag string
-	flagSet.StringVar(&configPathFlag, "config", "", "path to configuration file")
+	flagSet.StringVar(&slk.flags.configPath, "config", "", "path to configuration file")
+	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
+	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
 
 	err := flagSet.Parse(cmdLineArgs)
 	if err != nil {
@@ -66,7 +75,7 @@ func NewSlk(cmdLineArgs []string) *Slk {
 		return nil
 	}
 
-	configPath, err := getConfigPath(configPathFlag)
+	configPath, err := getConfigPath(slk.flags.configPath)
 	if err != nil {
 		slk.Crash(errors.Wrap(err, "could not get config path"))
 		return nil
@@ -106,10 +115,9 @@ func NewSlk(cmdLineArgs []string) *Slk {
 
 // Crash is a utility function that terminates the program with error exit code
 func (slk *Slk) Crash(err error) {
-	fmt.Printf("slk slk.Crashed: %s\n", err.Error())
+	fmt.Printf("Slk crashed: %s\n", err.Error())
 	os.Exit(1)
 }
-
 
 // OnIncomingEvent handles incoming updates from the slack client
 func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
@@ -189,7 +197,6 @@ func (slk *Slk) LoadChannels() {
 		slk.channelCache[channel.ID] = channel
 	}
 
-	log.Printf("Loaded %d channels", len(channels))
 }
 
 // LoadUsers loads a map of all non-deleted users
@@ -206,7 +213,6 @@ func (slk *Slk) LoadUsers() {
 		}
 	}
 
-	log.Printf("Loaded %d users", len(users))
 }
 
 // UserName looks up a username
@@ -230,6 +236,29 @@ func (slk *Slk) Run() {
 	api := slack.New(slk.config.APIToken)
 
 	slk.client = api.NewRTM()
+
+	if slk.flags.listUsers {
+		slk.LoadUsers()
+		for _, user := range slk.userCache {
+			fmt.Printf("%30s %40s %30s\n", user.RealName, user.Profile.Email, user.Profile.Title)
+		}
+		return
+	}
+
+	if slk.flags.listChannels {
+		slk.LoadChannels()
+		for _, channel := range slk.channelCache {
+			if channel.IsMpIM {
+				continue
+			}
+			visibility := "public"
+			if channel.IsPrivate {
+				visibility = "private"
+			}
+			fmt.Printf("%40s %8s %4d members\n", channel.Name, visibility, channel.NumMembers)
+		}
+		return
+	}
 
 	go slk.client.ManageConnection()
 
