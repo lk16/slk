@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/lk16/slk/internal/models"
@@ -23,6 +24,7 @@ type Flags struct {
 	configPath   string
 	listUsers    bool
 	listChannels bool
+	authCookie   string
 }
 
 // Slk is the controlling struct of the slk application
@@ -50,6 +52,7 @@ func NewSlk(cmdLineArgs []string) (*Slk, error) {
 	flagSet.StringVar(&slk.flags.configPath, "config", defaultConfigPath, "path to configuration file")
 	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
 	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
+	flagSet.StringVar(&slk.flags.authCookie, "cookie", "", "use authentication cookie to allow xoxc")
 
 	if err := flagSet.Parse(cmdLineArgs); err != nil {
 		return nil, errors.Wrap(err, "parsing commandline arguments failed")
@@ -215,11 +218,28 @@ func (slk *Slk) listChannels() error {
 	return nil
 }
 
+// this implements slack.httpclient which can't be asserted because that type is not exported
+type cookieHttpClient struct {
+	cookieValue string
+}
+
+func (client *cookieHttpClient) Do(request *http.Request) (*http.Response, error) {
+
+	cookie := &http.Cookie{
+		Name:  "d",
+		Value: client.cookieValue}
+
+	request.AddCookie(cookie)
+
+	return http.DefaultClient.Do(request)
+}
+
 // Run runs the slk application as configured
 func (slk *Slk) Run() error {
 
-	api := slack.New(slk.config.APIToken)
+	httpClient := &cookieHttpClient{cookieValue: slk.flags.authCookie}
 
+	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
 
 	if slk.flags.listUsers {
