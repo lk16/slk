@@ -49,39 +49,46 @@ func NewSlk(cmdLineArgs []string) (*Slk, error) {
 
 	defaultConfigPath := fmt.Sprintf("%s/%s", homeFolder, configBaseName)
 
+	// TODO option to generate config file skeleton
 	flagSet.StringVar(&slk.flags.configPath, "config", defaultConfigPath, "path to configuration file")
 	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
 	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
-	flagSet.StringVar(&slk.flags.authCookie, "cookie", "", "use authentication cookie to allow xoxc")
 
 	if err := flagSet.Parse(cmdLineArgs); err != nil {
 		return nil, errors.Wrap(err, "parsing commandline arguments failed")
 	}
 
-	fileInfo, err := os.Stat(slk.flags.configPath)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not stat config path")
+	if err := slk.LoadConfigFile(); err != nil {
+		return nil, errors.Wrap(err, "config loading")
 	}
 
-	if fileInfo.Mode().Perm() != configFileExpectedPerms {
-		return nil, fmt.Errorf("expected %s to have perms %#o", slk.flags.configPath, configFileExpectedPerms)
+	return slk, nil
+}
+
+// LoadConfigFile loads the config file from disk after checking who can access it.
+func (slk *Slk) LoadConfigFile() error {
+
+	fileInfo, err := os.Stat(slk.flags.configPath)
+	if err != nil {
+		return errors.Wrap(err, "stat error")
+	}
+
+	perms := fileInfo.Mode().Perm()
+	if perms != configFileExpectedPerms {
+		return fmt.Errorf("permission error: expected %#o but found %#o", configFileExpectedPerms, perms)
 	}
 
 	configContent, err := ioutil.ReadFile(slk.flags.configPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "config file json parsing error")
+		return errors.Wrap(err, "read error")
 	}
 
 	err = json.Unmarshal(configContent, &slk.config)
 	if err != nil {
-		return nil, errors.Wrap(err, "json parsing error")
+		return errors.Wrap(err, "parse error")
 	}
 
-	if slk.config.APIToken == "" {
-		return nil, errors.New("empty api token")
-	}
-
-	return slk, nil
+	return nil
 }
 
 // OnIncomingEvent handles incoming updates from the slack client
@@ -237,7 +244,7 @@ func (client *cookieHttpClient) Do(request *http.Request) (*http.Response, error
 // Run runs the slk application as configured
 func (slk *Slk) Run() error {
 
-	httpClient := &cookieHttpClient{cookieValue: slk.flags.authCookie}
+	httpClient := &cookieHttpClient{cookieValue: slk.config.Cookie}
 
 	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
