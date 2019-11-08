@@ -2,72 +2,96 @@ package slk
 
 import (
 	"fmt"
-	"log"
+	"os"
 	"time"
 
-	"github.com/marcusolsson/tui-go"
+	ui "github.com/gizak/termui/v3"
+	"github.com/gizak/termui/v3/widgets"
+	"github.com/pkg/errors"
 )
 
-type terminalUI struct {
-	handlers map[string]func(*terminalUI)
+type customEvent struct {
+	kind string
+	data string
 }
 
-func NewTerminalUI() (*terminalUI, error) {
-	sidebar := tui.NewVBox()
-	sidebar.Append(tui.NewLabel("CHANNELS"))
-	sidebar.Append(tui.NewLabel(""))
-	sidebar.Append(tui.NewLabel("DIRECT MESSAGES"))
-	sidebar.Append(tui.NewLabel(""))
-	sidebar.SetBorder(true)
-	sidebar.SetSizePolicy(tui.Minimum, tui.Maximum)
-
-	history := tui.NewVBox()
-	historyScroll := tui.NewScrollArea(history)
-	historyScroll.SetAutoscrollToBottom(true)
-
-	historyBox := tui.NewVBox(historyScroll)
-	historyBox.SetBorder(true)
-
-	input := tui.NewEntry()
-	input.SetFocused(true)
-	input.SetSizePolicy(tui.Expanding, tui.Maximum)
-
-	inputBox := tui.NewHBox(input)
-	inputBox.SetBorder(true)
-	inputBox.SetSizePolicy(tui.Expanding, tui.Maximum)
-
-	chat := tui.NewVBox(historyBox, inputBox)
-	chat.SetSizePolicy(tui.Expanding, tui.Expanding)
-
-	input.OnSubmit(func(e *tui.Entry) {
-		history.Append(tui.NewHBox(
-			tui.NewLabel(time.Now().Format("15:04")),
-			tui.NewPadder(1, 0, tui.NewLabel(fmt.Sprintf("<%s>", "john"))),
-			tui.NewLabel(e.Text()),
-			tui.NewSpacer(),
-		))
-		input.SetText("")
-	})
-
-	root := tui.NewHBox(sidebar, chat)
-
-	ui, err := tui.New(root)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ui.SetKeybinding("Esc", func() { ui.Quit() })
-
-	if err := ui.Run(); err != nil {
-		log.Fatal(err)
-	}
-
-	return nil, nil
+type TUI struct {
+	grid           *ui.Grid
+	messagesWidget *widgets.Paragraph
+	slackEvents    chan customEvent
 }
 
-/*
-TODO
-- init tui with empty stuff
-- handle updates as they come in over channel
+func NewTUI() (*TUI, error) {
 
-*/
+	if err := ui.Init(); err != nil {
+		return nil, errors.Wrap(err, "failed to initialize termui")
+	}
+
+	p := widgets.NewParagraph()
+	p.Text = "channels\ngo\nhere\n"
+	p.Title = "Channels"
+
+	messagesWidget := widgets.NewParagraph()
+	messagesWidget.Text = "messages\ngo\nhere\n"
+	messagesWidget.Title = "Messages"
+
+	grid := ui.NewGrid()
+	termWidth, termHeight := ui.TerminalDimensions()
+	grid.SetRect(0, 0, termWidth, termHeight)
+
+	grid.Set(
+		ui.NewCol(0.5, p),
+		ui.NewCol(0.5, messagesWidget),
+	)
+
+	tui := &TUI{
+		grid:           grid,
+		messagesWidget: messagesWidget,
+		slackEvents:    make(chan customEvent)}
+	return tui, nil
+}
+
+func (tui *TUI) Run() {
+	ui.Render(tui.grid)
+	defer ui.Close()
+
+	go func() {
+		for {
+			time.Sleep(30 * time.Millisecond)
+			tui.slackEvents <- customEvent{kind: "message", data: "some message"}
+		}
+	}()
+
+	events := ui.PollEvents()
+
+	for {
+		select {
+		case event := <-events:
+			switch event.ID {
+			case "q", "<C-c>":
+				ui.Close()
+
+				// TODO remove
+				os.Exit(0)
+
+				return
+			case "<Resize>":
+				payload := event.Payload.(ui.Resize)
+				tui.grid.SetRect(0, 0, payload.Width, payload.Height)
+				ui.Clear()
+				ui.Render(tui.grid)
+			default:
+				go func() {
+					tui.slackEvents <- customEvent{kind: "message", data: fmt.Sprintf("Unhandled event: %+v", event)}
+				}()
+			}
+		case event := <-tui.slackEvents:
+			switch event.kind {
+			case "message":
+				tui.messagesWidget.Text += event.data + "\n"
+				ui.Clear()
+				ui.Render(tui.grid)
+			}
+		}
+	}
+}

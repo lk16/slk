@@ -7,5 +7,10 @@ Slack terminal client
 - [ ] Docs how to fill in config with token/cookie
 - [ ] Tests
 - [ ] Actual TUI
-- [ ] Logging to fake channel 
-- [ ] Option to log to file
+    - [ ] Input
+        - [ ] basics like https://github.com/erroneousboat/slack-term/blob/master/components/input.go
+        - [ ] auto-complete
+    - [ ] Channels
+        - [ ] Support multiple
+        - [ ] Logging to fake channel 
+    - [ ] Interact with slack

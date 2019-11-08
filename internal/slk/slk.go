@@ -8,11 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sort"
-	"time"
 
 	"github.com/lk16/slk/internal/models"
-	"github.com/marcusolsson/tui-go"
 	"github.com/nlopes/slack"
 	"github.com/pkg/errors"
 )
@@ -28,6 +25,9 @@ type Flags struct {
 	listUsers    bool
 	listChannels bool
 	authCookie   string
+
+	// TODO remove
+	tui bool
 }
 
 // Slk is the controlling struct of the slk application
@@ -56,6 +56,7 @@ func NewSlk(cmdLineArgs []string) (*Slk, error) {
 	flagSet.StringVar(&slk.flags.configPath, "config", defaultConfigPath, "path to configuration file")
 	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
 	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
+	flagSet.BoolVar(&slk.flags.tui, "tui", false, "don't connect to slack, run tui and exit")
 
 	if err := flagSet.Parse(cmdLineArgs); err != nil {
 		return nil, errors.Wrap(err, "parsing commandline arguments failed")
@@ -247,6 +248,20 @@ func (client *cookieHttpClient) Do(request *http.Request) (*http.Response, error
 // Run runs the slk application as configured
 func (slk *Slk) Run() error {
 
+	if slk.flags.tui {
+		tui, err := NewTUI()
+		if err != nil {
+			return errors.Wrap(err, "tui failed to load")
+		}
+		tui.Run()
+
+		// TODO make sure program doesn't exit
+		for {
+		}
+
+		return nil
+	}
+
 	httpClient := &cookieHttpClient{cookieValue: slk.config.Cookie}
 
 	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
@@ -269,96 +284,6 @@ func (slk *Slk) Run() error {
 		slk.OnIncomingEvent(event)
 	}*/
 
-	// TODO use events
-	return slk.runTUI()
-}
-
-type post struct {
-	username string
-	message  string
-	time     string
-}
-
-var posts = []post{
-	{username: "john", message: "hi, what's up?", time: "14:41"},
-	{username: "jane", message: "not much", time: "14:43"},
-}
-
-func (slk *Slk) runTUI() error {
-	sidebar := tui.NewVBox()
-	sidebar.Append(tui.NewLabel("CHANNELS"))
-
-	var channels []slack.Channel
-
-	for _, channel := range slk.channelCache {
-		if channel.IsMember && channel.IsGroup && !channel.IsMpIM {
-			channels = append(channels, channel)
-		}
-	}
-
-	sort.Slice(channels, func(i, j int) bool {
-		return channels[i].Name < channels[j].Name
-	})
-
-	for _, channel := range channels {
-		sidebar.Append(tui.NewLabel(fmt.Sprintf("#%s", channel.Name)))
-	}
-
-	sidebar.Append(tui.NewLabel(""))
-	sidebar.Append(tui.NewLabel("DIRECT MESSAGES"))
-	sidebar.Append(tui.NewSpacer())
-	sidebar.SetBorder(true)
-	sidebar.SetSizePolicy(tui.Minimum, tui.Maximum)
-	history := tui.NewVBox()
-
-	for _, m := range posts {
-		history.Append(tui.NewHBox(
-			tui.NewLabel(m.time),
-			tui.NewPadder(1, 0, tui.NewLabel(fmt.Sprintf("<%s>", m.username))),
-			tui.NewLabel(m.message),
-			tui.NewSpacer(),
-		))
-	}
-
-	historyScroll := tui.NewScrollArea(history)
-	historyScroll.SetAutoscrollToBottom(true)
-
-	historyBox := tui.NewVBox(historyScroll)
-	historyBox.SetBorder(true)
-
-	input := tui.NewEntry()
-	input.SetFocused(true)
-	input.SetSizePolicy(tui.Expanding, tui.Maximum)
-
-	inputBox := tui.NewHBox(input)
-	inputBox.SetBorder(true)
-	inputBox.SetSizePolicy(tui.Expanding, tui.Maximum)
-
-	chat := tui.NewVBox(historyBox, inputBox)
-	chat.SetSizePolicy(tui.Expanding, tui.Expanding)
-
-	input.OnSubmit(func(e *tui.Entry) {
-		history.Append(tui.NewHBox(
-			tui.NewLabel(time.Now().Format("15:04")),
-			tui.NewPadder(1, 0, tui.NewLabel(fmt.Sprintf("<%s>", "john"))),
-			tui.NewLabel(e.Text()),
-			tui.NewSpacer(),
-		))
-		input.SetText("")
-	})
-
-	root := tui.NewHBox(sidebar, chat)
-
-	ui, err := tui.New(root)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ui.SetKeybinding("Esc", func() { ui.Quit() })
-
-	if err := ui.Run(); err != nil {
-		log.Fatal(err)
-	}
-
+	// TODO use TUI
 	return nil
 }
