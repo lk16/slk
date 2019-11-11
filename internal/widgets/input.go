@@ -1,16 +1,16 @@
-package form
+package wid
 
 import (
+	"bytes"
 	"image"
 
 	ui "github.com/gizak/termui/v3"
-	"github.com/gizak/termui/v3/widgets"
 )
 
-// Input is the definition of an Input component
+// Input allows a user to enter text such as for chat
 type Input struct {
-	// TODO make private or embed this instead?
-	Paragraph *widgets.Paragraph
+	ui.Block
+	buff bytes.Buffer
 }
 
 var _ ui.Drawable = (*Input)(nil)
@@ -19,46 +19,45 @@ var _ ui.Drawable = (*Input)(nil)
 func NewInput() *Input {
 
 	input := &Input{
-		Paragraph: widgets.NewParagraph()}
+		Block: *ui.NewBlock()}
 
 	return input
 }
 
-func (input *Input) GetRect() image.Rectangle {
-	return input.Paragraph.GetRect()
-}
+func (input *Input) Draw(buffer *ui.Buffer) {
+	input.Block.Draw(buffer)
 
-func (input *Input) SetRect(x1, y1, x2, y2 int) {
-	input.Paragraph.SetRect(x1, y1, x2, y2)
-	if input.Paragraph.Dy() < 3 {
-		panic("Input can't be less than 3 high")
+	for i, s := range input.buff.String() {
+
+		cell := ui.Cell{Rune: rune(s), Style: ui.StyleClear}
+		x := i % input.Inner.Dx()
+		y := i / input.Inner.Dx()
+
+		if y >= input.Inner.Dy() {
+			return
+		}
+
+		buffer.SetCell(cell, image.Pt(x, y).Add(input.Inner.Min))
 	}
 }
 
-func (input *Input) Draw(buffer *ui.Buffer) {
-	input.Paragraph.Draw(buffer)
-}
-
-func (input *Input) Lock() {
-	input.Paragraph.Lock()
-}
-
-func (input *Input) Unlock() {
-	input.Paragraph.Unlock()
-}
-
-func (input *Input) Append(s string) {
-	input.Paragraph.Text += s
+func (input *Input) AppendChar(s string) {
+	if len(s) != 1 {
+		// TODO complain with some error message
+		return
+	}
+	input.buff.WriteString(s)
 }
 
 func (input *Input) OnBackspace() {
-	length := len(input.Paragraph.Text)
-	if length == 0 {
-		return
+	length := input.buff.Len()
+	if length != 0 {
+		input.buff.Truncate(length - 1)
 	}
-	input.Paragraph.Text = input.Paragraph.Text[:length-1]
 }
 
-func (input *Input) Clear() {
-	input.Paragraph.Text = ""
+func (input *Input) Submit() string {
+	text := input.buff.String()
+	input.buff.Reset()
+	return text
 }

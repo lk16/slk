@@ -89,8 +89,13 @@ func (tui *TUI) OnResize(event ui.Event) {
 }
 
 func (tui *TUI) OnEnter(event ui.Event) {
-	message := tui.inputWidget.Paragraph.Text
-	tui.inputWidget.Clear()
+	message := tui.inputWidget.Submit()
+
+	// discard empty messages
+	if message == "" {
+		return
+	}
+
 	go func() {
 		tui.slackEvents <- customEvent{
 			kind: "message",
@@ -101,11 +106,12 @@ func (tui *TUI) OnEnter(event ui.Event) {
 }
 
 func (tui *TUI) DefaultHandler(event ui.Event) {
+	tui.GenerateCustomEvent("debug", fmt.Sprintf("TUI: unhandled event with ID \"%s\"", event.ID))
+}
 
+func (tui *TUI) GenerateCustomEvent(kind, data string) {
 	go func() {
-		tui.slackEvents <- customEvent{
-			kind: "debug",
-			data: fmt.Sprintf("TUI: unhandled event with ID \"%s\"", event.ID)}
+		tui.slackEvents <- customEvent{kind: kind, data: data}
 	}()
 }
 
@@ -115,7 +121,7 @@ func (tui *TUI) HandleEvent(event ui.Event) {
 		return
 	}
 	if !strings.HasPrefix(event.ID, "<") {
-		tui.inputWidget.Append(event.ID)
+		tui.inputWidget.AppendChar(event.ID)
 		return
 	}
 	tui.DefaultHandler(event)
