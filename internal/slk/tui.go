@@ -7,6 +7,7 @@ import (
 
 	ui "github.com/gizak/termui/v3"
 	"github.com/gizak/termui/v3/widgets"
+	"github.com/lk16/slk/internal/event"
 	wid "github.com/lk16/slk/internal/widgets"
 	"github.com/pkg/errors"
 )
@@ -20,8 +21,8 @@ type TUI struct {
 	grid           *ui.Grid
 	messagesWidget *widgets.Paragraph
 	inputWidget    *wid.Input
-	slackEvents    chan customEvent
-	handlers       map[string]func(ui.Event)
+	events         chan event.Event
+	handlers       map[string]func(event.Event)
 }
 
 func NewTUI() (*TUI, error) {
@@ -56,31 +57,37 @@ func NewTUI() (*TUI, error) {
 		grid:           grid,
 		messagesWidget: messagesWidget,
 		inputWidget:    inputWidget,
-		slackEvents:    make(chan customEvent)}
+		events:         make(chan event.Event)}
 
-	tui.handlers = map[string]func(ui.Event){
-		"<C-c>":       tui.OnInterrupt,
-		"<Resize>":    tui.OnResize,
-		"<Enter>":     tui.OnEnter,
-		"<Backspace>": tui.OnBackSpace,
+	tui.handlers = map[string]func(event.Event){
+		"debug:":          tui.OnDebug,
+		"tui:<C-c>":       tui.OnInterrupt,
+		"tui:<Resize>":    tui.OnResize,
+		"tui:<Enter>":     tui.OnEnter,
+		"tui:<Backspace>": tui.OnBackSpace,
+		"tui:<Space>":     tui.OnSpace,
 	}
 
 	return tui, nil
 }
 
-func (tui *TUI) OnBackSpace(event ui.Event) {
+func (tui *TUI) OnSpace(e event.Event) {
+	tui.inputWidget.AppendChar(" ")
+}
+
+func (tui *TUI) OnBackSpace(e event.Event) {
 	tui.inputWidget.OnBackspace()
 }
 
-func (tui *TUI) OnInterrupt(event ui.Event) {
+func (tui *TUI) OnInterrupt(e event.Event) {
 	ui.Close()
 
 	// TODO remove
 	os.Exit(0)
 }
 
-func (tui *TUI) OnResize(event ui.Event) {
-	payload := event.Payload.(ui.Resize)
+func (tui *TUI) OnResize(e event.Event) {
+	payload := e.Tui.Payload.(ui.Resize)
 	tui.grid.SetRect(0, 0, payload.Width, payload.Height)
 
 	// TODO remove:
@@ -88,7 +95,7 @@ func (tui *TUI) OnResize(event ui.Event) {
 	ui.Render(tui.grid)
 }
 
-func (tui *TUI) OnEnter(event ui.Event) {
+func (tui *TUI) OnEnter(e event.Event) {
 	message := tui.inputWidget.Submit()
 
 	// discard empty messages
@@ -96,51 +103,49 @@ func (tui *TUI) OnEnter(event ui.Event) {
 		return
 	}
 
-	go func() {
-		tui.slackEvents <- customEvent{
-			kind: "message",
-			data: message,
-		}
-	}()
-
+	tui.Debugf("message: %s", message)
 }
 
-func (tui *TUI) DefaultHandler(event ui.Event) {
-	tui.GenerateCustomEvent("debug", fmt.Sprintf("TUI: unhandled event with ID \"%s\"", event.ID))
+func (tui *TUI) OnUnhandledEvent(e event.Event) {
+	tui.Debugf("TUI: unhandled event with ID \"%s\"", e.ID())
 }
 
-func (tui *TUI) GenerateCustomEvent(kind, data string) {
+func (tui *TUI) Debugf(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
 	go func() {
-		tui.slackEvents <- customEvent{kind: kind, data: data}
+		tui.events <- event.FromDebug(message)
 	}()
 }
 
-func (tui *TUI) HandleEvent(event ui.Event) {
-	if handler, ok := tui.handlers[event.ID]; ok {
-		handler(event)
+func (tui *TUI) OnDebug(e event.Event) {
+	tui.messagesWidget.Text += fmt.Sprintf("debug: %s\n", e.Debug)
+}
+
+func (tui *TUI) HandleEvent(e event.Event) {
+	if handler, ok := tui.handlers[e.ID()]; ok {
+		handler(e)
 		return
 	}
-	if !strings.HasPrefix(event.ID, "<") {
-		tui.inputWidget.AppendChar(event.ID)
+	if strings.HasPrefix(e.ID(), "tui:") && !strings.HasPrefix(e.ID(), "tui:<") {
+		// TODO this is a hack
+		tui.inputWidget.AppendChar(e.ID()[4:])
 		return
 	}
-	tui.DefaultHandler(event)
+	tui.OnUnhandledEvent(e)
 }
 
 func (tui *TUI) Run() {
 	ui.Render(tui.grid)
 	defer ui.Close()
 
-	events := ui.PollEvents()
-
-	// TODO merge ui and slack event streams
-	for {
-		select {
-		case event := <-events:
-			tui.HandleEvent(event)
-		case event := <-tui.slackEvents:
-			tui.messagesWidget.Text += fmt.Sprintf("%s: %s\n", event.kind, event.data)
+	go func() {
+		for tuiEvent := range ui.PollEvents() {
+			tui.events <- event.FromTUI(&tuiEvent)
 		}
+	}()
+
+	for e := range tui.events {
+		tui.HandleEvent(e)
 		ui.Clear()
 		ui.Render(tui.grid)
 	}
