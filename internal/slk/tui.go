@@ -17,6 +17,7 @@ type customEvent struct {
 	data string
 }
 
+// TUI represents the terminal UI state
 type TUI struct {
 	grid           *ui.Grid
 	messagesWidget *widgets.Paragraph
@@ -25,6 +26,7 @@ type TUI struct {
 	handlers       map[string]func(event.Event)
 }
 
+// NewTUI creates a new TUI object
 func NewTUI() (*TUI, error) {
 
 	if err := ui.Init(); err != nil {
@@ -71,14 +73,17 @@ func NewTUI() (*TUI, error) {
 	return tui, nil
 }
 
+// OnSpace handles the space key press event
 func (tui *TUI) OnSpace(e event.Event) {
 	tui.inputWidget.AppendChar(" ")
 }
 
+// OnBackSpace handles the backspace key press event
 func (tui *TUI) OnBackSpace(e event.Event) {
 	tui.inputWidget.OnBackspace()
 }
 
+// OnInterrupt handles the ctrl+C key press event
 func (tui *TUI) OnInterrupt(e event.Event) {
 	ui.Close()
 
@@ -86,6 +91,7 @@ func (tui *TUI) OnInterrupt(e event.Event) {
 	os.Exit(0)
 }
 
+// OnResize handles the resize event
 func (tui *TUI) OnResize(e event.Event) {
 	payload := e.Tui.Payload.(ui.Resize)
 	tui.grid.SetRect(0, 0, payload.Width, payload.Height)
@@ -95,6 +101,7 @@ func (tui *TUI) OnResize(e event.Event) {
 	ui.Render(tui.grid)
 }
 
+// OnEnter handles the enter key press event
 func (tui *TUI) OnEnter(e event.Event) {
 	message := tui.inputWidget.Submit()
 
@@ -106,10 +113,12 @@ func (tui *TUI) OnEnter(e event.Event) {
 	tui.Debugf("message: %s", message)
 }
 
+// OnUnhandledEvent handles any event that is not handled by other handlers
 func (tui *TUI) OnUnhandledEvent(e event.Event) {
 	tui.Debugf("TUI: unhandled event with ID \"%s\"", e.ID())
 }
 
+// Debugf prints formatted debug info as a chat message
 func (tui *TUI) Debugf(format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	go func() {
@@ -117,10 +126,12 @@ func (tui *TUI) Debugf(format string, args ...interface{}) {
 	}()
 }
 
+// OnDebug handles a debug message event
 func (tui *TUI) OnDebug(e event.Event) {
 	tui.messagesWidget.Text += fmt.Sprintf("debug: %s\n", e.Debug)
 }
 
+// HandleEvent handles any event
 func (tui *TUI) HandleEvent(e event.Event) {
 	if handler, ok := tui.handlers[e.ID()]; ok {
 		handler(e)
@@ -134,6 +145,7 @@ func (tui *TUI) HandleEvent(e event.Event) {
 	tui.OnUnhandledEvent(e)
 }
 
+// Run is the entry point of the terminal UI
 func (tui *TUI) Run() {
 	ui.Render(tui.grid)
 	defer ui.Close()

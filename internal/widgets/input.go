@@ -24,12 +24,14 @@ func NewInput() *Input {
 	return input
 }
 
+// Draw updates the shell portion of the Input object
 func (input *Input) Draw(buffer *ui.Buffer) {
 	input.Block.Draw(buffer)
 
 	for i, s := range input.buff.String() {
 
-		cell := ui.Cell{Rune: rune(s), Style: ui.StyleClear}
+		cell := ui.Cell{Rune: s,
+			Style: ui.StyleClear}
 		x := i % input.Inner.Dx()
 		y := i / input.Inner.Dx()
 
@@ -41,14 +43,16 @@ func (input *Input) Draw(buffer *ui.Buffer) {
 	}
 }
 
+// AppendChar adds one character to the Input
 func (input *Input) AppendChar(s string) {
 	if len(s) != 1 {
 		// TODO complain with some error message
 		return
 	}
-	input.buff.WriteString(s)
+	_, _ = input.buff.WriteString(s)
 }
 
+// OnBackspace removes the last character from the input
 func (input *Input) OnBackspace() {
 	length := input.buff.Len()
 	if length != 0 {
@@ -56,6 +60,7 @@ func (input *Input) OnBackspace() {
 	}
 }
 
+// Submit returns the input text and empties it
 func (input *Input) Submit() string {
 	text := input.buff.String()
 	input.buff.Reset()

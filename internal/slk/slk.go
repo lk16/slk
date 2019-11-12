@@ -24,7 +24,6 @@ type Flags struct {
 	configPath   string
 	listUsers    bool
 	listChannels bool
-	authCookie   string
 
 	// TODO remove
 	tui bool
@@ -229,12 +228,13 @@ func (slk *Slk) listChannels() error {
 	return nil
 }
 
-// this implements slack.httpclient which can't be asserted because that type is not exported
-type cookieHttpClient struct {
+// cookieHttpClient implements slack.httpclient
+// It sends a cookie on every http request
+type cookieHTTPClient struct {
 	cookieValue string
 }
 
-func (client *cookieHttpClient) Do(request *http.Request) (*http.Response, error) {
+func (client *cookieHTTPClient) Do(request *http.Request) (*http.Response, error) {
 
 	cookie := &http.Cookie{
 		Name:  "d",
@@ -258,11 +258,9 @@ func (slk *Slk) Run() error {
 		// TODO make sure program doesn't exit
 		for {
 		}
-
-		return nil
 	}
 
-	httpClient := &cookieHttpClient{cookieValue: slk.config.Cookie}
+	httpClient := &cookieHTTPClient{cookieValue: slk.config.Cookie}
 
 	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
