@@ -4,57 +4,31 @@ import (
 	"fmt"
 
 	ui "github.com/gizak/termui/v3"
+	"github.com/nlopes/slack"
 )
 
-type Kind int
 
-const (
-	EventSlack = iota
-	EventTUI
-	EventDebug
-)
-
+// Event is a very generic event
 type Event struct {
-
-	// TODO
-	slack interface{}
-
-	// TODO make read only method
-	Tui *ui.Event
-
-	// TODO make read only method
-	Debug string
-
-	kind Kind
+	Data interface{}
 }
 
-func FromTUI(tuiEvent *ui.Event) Event {
-	return Event{
-		Tui:  tuiEvent,
-		kind: EventTUI,
-	}
+// New creates a new Event
+func New(i interface{}) Event{
+	return Event{Data: i}
 }
 
-// TODO
-// func FromSlack(slackEvent interface{}) Event {}
-
-func FromDebug(debugEvent string) Event {
-	return Event{
-		Debug: debugEvent,
-		kind:  EventDebug,
-	}
-}
-
+// ID returns a unique string per event type
 func (event Event) ID() string {
-	switch event.kind {
-	case EventSlack:
-		// TODO
-		panic("not implemeneted")
-	case EventTUI:
-		return fmt.Sprintf("tui:%s", event.Tui.ID)
-	case EventDebug:
+	
+	switch data := event.Data.(type) {
+	case *slack.RTMEvent:
+		return fmt.Sprintf("slack:%s", data.Type)
+	case *ui.Event:
+		return fmt.Sprintf("tui:%s", data.ID)
+	case string:
 		return "debug:"
 	default:
-		panic("unkown event.Event ID")
+		return fmt.Sprintf("unknown_event_type_%T", event)
 	}
 }

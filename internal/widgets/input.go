@@ -35,6 +35,8 @@ func (input *Input) Draw(buffer *ui.Buffer) {
 		x := i % input.Inner.Dx()
 		y := i / input.Inner.Dx()
 
+		// don't show overflow
+		// TODO make this scrollable?
 		if y >= input.Inner.Dy() {
 			return
 		}

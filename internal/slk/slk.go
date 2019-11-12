@@ -95,6 +95,7 @@ func (slk *Slk) LoadConfigFile() error {
 }
 
 // OnIncomingEvent handles incoming updates from the slack client
+// TODO this is never called
 func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
 	var logMsg string
 
@@ -248,23 +249,11 @@ func (client *cookieHTTPClient) Do(request *http.Request) (*http.Response, error
 // Run runs the slk application as configured
 func (slk *Slk) Run() error {
 
-	if slk.flags.tui {
-		tui, err := NewTUI()
-		if err != nil {
-			return errors.Wrap(err, "tui failed to load")
-		}
-		tui.Run()
-
-		// TODO make sure program doesn't exit
-		for {
-		}
-	}
-
 	httpClient := &cookieHTTPClient{cookieValue: slk.config.Cookie}
 
 	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
-
+ 
 	if slk.flags.listUsers {
 		return slk.listUsers()
 	}
@@ -275,13 +264,18 @@ func (slk *Slk) Run() error {
 
 	go slk.client.ManageConnection()
 
+	tui, err := NewTUI(slk.client)
+	if err != nil {
+		return errors.Wrap(err, "tui failed to load")
+	}
+	tui.Run()
+
+	// TODO send in goroutine as custom event
 	slk.LoadChannels()
 	slk.LoadUsers()
 
-	/*for event := range slk.client.IncomingEvents {
-		slk.OnIncomingEvent(event)
-	}*/
+	// TODO make sure program doesn't exit
+	for {
+	}
 
-	// TODO use TUI
-	return nil
 }
