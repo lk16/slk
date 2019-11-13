@@ -228,7 +228,7 @@ func (slk *Slk) Run() error {
 			return
 		}
 		tui.Debugf("Loaded %d channels", len(channels))
-		tui.SendEvent(event.NewWithID(channels, "slk:channels"))
+		tui.SendEvent(event.NewWithID(channels, "slk:list_channels"))
 
 		users, err := slk.LoadUsers()
 		if err != nil {
@@ -236,7 +236,7 @@ func (slk *Slk) Run() error {
 			return
 		}
 		tui.Debugf("Loaded %d users", len(users))
-		tui.SendEvent(event.NewWithID(users, "slk:users"))
+		tui.SendEvent(event.NewWithID(users, "slk:list_users"))
 
 	}()
 

@@ -7,6 +7,7 @@
 - [ ] Actual TUI
     - [ ] Input
         - [x] entering/submitting messages
+        - [ ] <kbd>&lt;</kbd> is not handled properly
         - [ ] syntax highlighting
         - [ ] deal with line breaks on <kbd>Shift</kbd>+<kbd>Enter</kbd>
         - [ ] auto-complete
@@ -14,7 +15,10 @@
             - [ ] `@users`
             - [ ] `/command`
     - [ ] Channels
-        - [ ] List channels
+        - [ ] Channels list
+            - [x] show channels
+            - [ ] show icons 
+            - [ ] group/sort in different ways
         - [ ] Show recent history
         - [ ] Switching between channels
         - [ ] On new messages
