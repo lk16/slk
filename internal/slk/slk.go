@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 
+	"github.com/lk16/slk/internal/event"
 	"github.com/lk16/slk/internal/models"
 	"github.com/nlopes/slack"
 	"github.com/pkg/errors"
@@ -31,11 +31,9 @@ type Flags struct {
 
 // Slk is the controlling struct of the slk application
 type Slk struct {
-	flags        Flags
-	config       models.Config
-	client       *slack.RTM
-	userCache    map[string]slack.User
-	channelCache map[string]slack.Channel
+	flags  Flags
+	config models.Config
+	client *slack.RTM
 }
 
 // NewSlk creates a new slk from commandline arguments
@@ -94,48 +92,8 @@ func (slk *Slk) LoadConfigFile() error {
 	return nil
 }
 
-// OnIncomingEvent handles incoming updates from the slack client
-// TODO this is never called
-func (slk *Slk) OnIncomingEvent(event slack.RTMEvent) {
-	var logMsg string
-
-	switch ev := event.Data.(type) {
-
-	case *slack.ConnectedEvent:
-		logMsg = fmt.Sprintf("%s connected", ev.Info.User.Name)
-
-	case *slack.MessageEvent:
-		logMsg = fmt.Sprintf("#%s %s: %s", slk.ChannelName(ev.Channel), slk.UserName(ev.User), ev.Msg.Text)
-
-	case *slack.PresenceChangeEvent:
-		logMsg = fmt.Sprintf("%s is now %s", ev.User, ev.Presence)
-
-	case *slack.RTMError:
-		logMsg = ev.Error()
-
-	// this spams the log
-	case *slack.LatencyReport:
-		return
-
-	// TODO this list is not complete
-	// ignored events
-	case *slack.ConnectionErrorEvent:
-	case *slack.ConnectingEvent:
-	case *slack.DisconnectedEvent:
-	case *slack.InvalidAuthEvent:
-	case *slack.UnmarshallingErrorEvent:
-	case *slack.MessageTooLongEvent:
-	case *slack.RateLimitEvent:
-	case *slack.OutgoingErrorEvent:
-	case *slack.IncomingEventError:
-	case *slack.AckErrorEvent:
-	}
-
-	log.Printf("%16s %s\n", event.Type, logMsg)
-}
-
 // LoadChannels loads a map of all channels
-func (slk *Slk) LoadChannels() {
+func (slk *Slk) LoadChannels() (map[string]slack.Channel, error) {
 
 	cursor := ""
 	iterations := 0
@@ -160,63 +118,57 @@ func (slk *Slk) LoadChannels() {
 		)
 
 		if err != nil {
-			// TODO
+			return nil, errors.Wrap(err, "loading channels failed")
 		}
 
 		channels = append(channels, channelsChunk...)
 		iterations++
 	}
 
-	slk.channelCache = make(map[string]slack.Channel, len(channels))
+	channelsMap := make(map[string]slack.Channel, len(channels))
 	for _, channel := range channels {
-		slk.channelCache[channel.ID] = channel
+		channelsMap[channel.ID] = channel
 	}
+	return channelsMap, nil
 
 }
 
 // LoadUsers loads a map of all non-deleted users
-func (slk *Slk) LoadUsers() {
+func (slk *Slk) LoadUsers() (map[string]slack.User, error) {
 	users, err := slk.client.GetUsers()
 	if err != nil {
-		// TODO
+		return nil, errors.Wrap(err, "loading users failed")
 	}
 
-	slk.userCache = make(map[string]slack.User, len(users))
+	userMap := make(map[string]slack.User, len(users))
 	for _, user := range users {
 		if !user.Deleted {
-			slk.userCache[user.ID] = user
+			userMap[user.ID] = user
 		}
 	}
+	return userMap, nil
 
-}
-
-// UserName looks up a username
-func (slk *Slk) UserName(code string) string {
-	if user, ok := slk.userCache[code]; ok {
-		return user.RealName
-	}
-	return "???"
-}
-
-// ChannelName looks up a channelname
-func (slk *Slk) ChannelName(code string) string {
-	if channel, ok := slk.channelCache[code]; ok {
-		return channel.Name
-	}
-	return "???"
 }
 
 func (slk *Slk) listUsers() error {
-	slk.LoadUsers()
-	for _, user := range slk.userCache {
+	users, err := slk.LoadUsers()
+	if err != nil {
+		return err
+	}
+
+	for _, user := range users {
 		fmt.Printf("%30s %40s %30s\n", user.RealName, user.Profile.Email, user.Profile.Title)
 	}
 	return nil
 }
 
 func (slk *Slk) listChannels() error {
-	slk.LoadChannels()
-	for _, channel := range slk.channelCache {
+	channels, err := slk.LoadChannels()
+	if err != nil {
+		return err
+	}
+
+	for _, channel := range channels {
 		if channel.IsMpIM {
 			continue
 		}
@@ -253,7 +205,7 @@ func (slk *Slk) Run() error {
 
 	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
- 
+
 	if slk.flags.listUsers {
 		return slk.listUsers()
 	}
@@ -268,14 +220,27 @@ func (slk *Slk) Run() error {
 	if err != nil {
 		return errors.Wrap(err, "tui failed to load")
 	}
+
+	go func() {
+		channels, err := slk.LoadChannels()
+		if err != nil {
+			tui.Debugf("%s", err.Error())
+			return
+		}
+		tui.Debugf("Loaded %d channels", len(channels))
+		tui.SendEvent(event.NewWithID(channels, "slk:channels"))
+
+		users, err := slk.LoadUsers()
+		if err != nil {
+			tui.Debugf("%s", err.Error())
+			return
+		}
+		tui.Debugf("Loaded %d users", len(users))
+		tui.SendEvent(event.NewWithID(users, "slk:users"))
+
+	}()
+
 	tui.Run()
 
-	// TODO send in goroutine as custom event
-	slk.LoadChannels()
-	slk.LoadUsers()
-
-	// TODO make sure program doesn't exit
-	for {
-	}
-
+	return nil
 }

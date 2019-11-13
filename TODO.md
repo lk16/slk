@@ -6,9 +6,20 @@
 - [ ] Tests
 - [ ] Actual TUI
     - [ ] Input
-        - [ ] basics like https://github.com/erroneousboat/slack-term/blob/master/components/input.go
+        - [x] entering/submitting messages
+        - [ ] syntax highlighting
+        - [ ] deal with line breaks on <kbd>Shift</kbd>+<kbd>Enter</kbd>
         - [ ] auto-complete
+            - [ ] `#channels`
+            - [ ] `@users`
+            - [ ] `/command`
     - [ ] Channels
-        - [ ] Support multiple
-        - [ ] Logging to fake channel 
-    - [ ] Interact with slack
+        - [ ] List channels
+        - [ ] Show recent history
+        - [ ] Switching between channels
+        - [ ] On new messages
+            - [ ] Show up on history
+            - [ ] Mark as unread if not active
+            - [ ] Mark as read when switched to
+        - [ ] Sending new messages
+        - [ ] Logging to fake channel

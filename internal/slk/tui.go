@@ -165,7 +165,7 @@ func (tui *TUI) Run() {
 
 	go func() {
 		for tuiEvent := range ui.PollEvents() {
-			tui.events <- event.New(&tuiEvent) 
+			tui.events <- event.New(&tuiEvent)
 		}
 	}()
 

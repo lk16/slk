@@ -7,20 +7,26 @@ import (
 	"github.com/nlopes/slack"
 )
 
-
 // Event is a very generic event
 type Event struct {
 	Data interface{}
+	id   string
 }
 
 // New creates a new Event
-func New(i interface{}) Event{
+// TODO get rid of this
+func New(i interface{}) Event {
 	return Event{Data: i}
+}
+
+// NewWithID creates a new Event with custom ID value
+func NewWithID(i interface{}, id string) Event {
+	return Event{Data: i, id: id}
 }
 
 // ID returns a unique string per event type
 func (event Event) ID() string {
-	
+
 	switch data := event.Data.(type) {
 	case *slack.RTMEvent:
 		return fmt.Sprintf("slack:%s", data.Type)
@@ -29,6 +35,6 @@ func (event Event) ID() string {
 	case string:
 		return "debug:"
 	default:
-		return fmt.Sprintf("unknown_event_type_%T", event)
+		return event.id
 	}
 }
