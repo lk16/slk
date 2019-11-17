@@ -24,7 +24,7 @@ type customEvent struct {
 // TUI represents the terminal UI state
 type TUI struct {
 	grid             *ui.Grid
-	messagesWidget   *widgets.Paragraph
+	chatWidget       *wid.Chat
 	channelsWidget   *widgets.Paragraph
 	inputWidget      *wid.Input
 	slackRTM         *slack.RTM
@@ -43,8 +43,8 @@ func NewTUI(slackRTM *slack.RTM) (*TUI, error) {
 	channelsWidget := widgets.NewParagraph()
 	channelsWidget.Title = "Channels"
 
-	messagesWidget := widgets.NewParagraph()
-	messagesWidget.Title = "Messages"
+	chatWidget := wid.NewChat()
+	chatWidget.Title = "Messages"
 
 	inputWidget := wid.NewInput()
 
@@ -55,14 +55,14 @@ func NewTUI(slackRTM *slack.RTM) (*TUI, error) {
 	grid.Set(
 		ui.NewCol(0.3, channelsWidget),
 		ui.NewCol(0.7,
-			ui.NewRow(0.8, messagesWidget),
+			ui.NewRow(0.8, chatWidget),
 			ui.NewRow(0.2, inputWidget),
 		),
 	)
 
 	tui := &TUI{
 		grid:           grid,
-		messagesWidget: messagesWidget,
+		chatWidget:     chatWidget,
 		inputWidget:    inputWidget,
 		channelsWidget: channelsWidget,
 		events:         make(chan event.Event),
@@ -144,6 +144,7 @@ func (tui *TUI) OnCommand(message string) {
 			return
 		}
 		for channelKey, channel := range tui.channels {
+			tui.Debugf("Comparing %s %s", fmt.Sprintf("#%s", channel.Name), args[0])
 			if fmt.Sprintf("#%s", channel.Name) == args[0] {
 				tui.switchChannel(channelKey)
 				return
@@ -170,21 +171,24 @@ func (tui *TUI) switchChannel(channelKey string) {
 		return
 	}
 
-	var buff bytes.Buffer
+	tui.chatWidget.Clear()
 
 	for _, message := range history.Messages {
-		var timestamp string
 		timestampFloat, err := strconv.ParseFloat(message.Timestamp, 64)
 		if err != nil {
-			timestamp = "???"
-		} else {
-			timestamp = time.Unix(int64(timestampFloat), 0).Format("02/01 15:04")
+			// TODO log conversion error
+			continue
 		}
 
-		buff.WriteString(fmt.Sprintf("%s %s: %s\n", timestamp, message.User, message.Text))
+		timestamp := time.Unix(int64(timestampFloat), 0)
+
+		tui.chatWidget.AddMessage(wid.Message{
+			Sender:    message.Username,
+			Text:      message.Text,
+			Timestamp: timestamp,
+		})
 	}
 
-	tui.messagesWidget.Text = buff.String()
 }
 
 // OnEnter handles the enter key press event
@@ -225,7 +229,13 @@ func (tui *TUI) Debugf(format string, args ...interface{}) {
 
 // OnDebug displays a debug message in the terminal UI
 func (tui *TUI) OnDebug(e event.Event) {
-	tui.messagesWidget.Text += fmt.Sprintf("debug: %s\n", e.Data.(string))
+	message := wid.Message{
+		Timestamp: time.Now(),
+		Sender:    "debug",
+		Text:      e.Data.(string),
+	}
+
+	tui.chatWidget.AddMessage(message)
 }
 
 // HandleEvent handles any event

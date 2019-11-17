@@ -5,7 +5,7 @@
     - [ ] README setup section
 - [ ] Tests
 - [ ] Actual TUI
-    - [ ] Input
+    - [ ] Input widget
         - [x] entering/submitting messages
         - [ ] <kbd>&lt;</kbd> is not handled properly
         - [ ] syntax highlighting
@@ -14,13 +14,20 @@
             - [ ] `#channels`
             - [ ] `@users`
             - [ ] `/command`
-    - [ ] Channels
-        - [ ] Channels list
-            - [x] show channels
-            - [ ] show icons 
-            - [ ] group/sort in different ways
-        - [ ] Show recent history
+    - [ ] Chat widget
+        - [#] auto scroll down
+        - [ ] allow multiline messages
+        - [ ] color highlight timestamp/users
+        - [ ] alternate dark/light grey
+        - [ ] emoticons
+    - [ ] Channels widget
+        - [x] show channels
+        - [ ] show icons 
+        - [ ] group/sort in different ways
+    - [ ] Functionality
         - [ ] Switching between channels
+            - [x] basic functionality
+            - [ ] make it stable
         - [ ] On new messages
             - [ ] Show up on history
             - [ ] Mark as unread if not active
