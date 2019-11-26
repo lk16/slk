@@ -7,7 +7,7 @@
 - [ ] Actual TUI
     - [ ] Input widget
         - [x] entering/submitting messages
-        - [ ] <kbd>&lt;</kbd> is not handled properly
+        - [x] <kbd>&lt;</kbd> is not handled properly
         - [ ] syntax highlighting
         - [ ] deal with line breaks on <kbd>Shift</kbd>+<kbd>Enter</kbd>
         - [ ] auto-complete

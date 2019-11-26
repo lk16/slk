@@ -82,6 +82,10 @@ func NewTUI(slackRTM *slack.RTM) (*TUI, error) {
 		"tui:<Enter>":          tui.OnEnter,
 		"tui:<Resize>":         tui.OnResize,
 		"tui:<Space>":          tui.OnSpace,
+		"tui:<MouseLeft>":      nil,
+		"tui:<MouseRelease>":   nil,
+		"tui:<MouseWheelUp>":   nil,
+		"tui:<MouseWheelDown>": nil,
 	}
 
 	return tui, nil
@@ -257,9 +261,9 @@ func (tui *TUI) HandleEvent(e event.Event) {
 		}
 		return
 	}
-	if strings.HasPrefix(e.ID(), "tui:") && !strings.HasPrefix(e.ID(), "tui:<") {
-		// TODO this is a hack
-		tui.inputWidget.AppendChar(e.ID()[4:])
+	if strings.HasPrefix(e.ID(), "tui:") && (e.ID() == "tui:<" || !strings.HasPrefix(e.ID(), "tui:<")) {
+		char := e.ID()[4:]
+		tui.inputWidget.AppendChar(char)
 		return
 	}
 	tui.OnUnhandledEvent(e)
