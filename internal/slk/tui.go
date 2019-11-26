@@ -144,7 +144,6 @@ func (tui *TUI) OnCommand(message string) {
 			return
 		}
 		for channelKey, channel := range tui.channels {
-			tui.Debugf("Comparing %s %s", fmt.Sprintf("#%s", channel.Name), args[0])
 			if fmt.Sprintf("#%s", channel.Name) == args[0] {
 				tui.switchChannel(channelKey)
 				return
@@ -165,19 +164,27 @@ func (tui *TUI) switchChannel(channelKey string) {
 	tui.activeChannelKey = channelKey
 
 	// TODO use goroutine here
-	history, err := tui.slackRTM.GetChannelHistory(channelKey, slack.NewHistoryParameters())
+	historyParams := slack.GetConversationHistoryParameters{
+		ChannelID: channelKey,
+		Limit:     100,
+		Inclusive: false,
+	}
+
+	history, err := tui.slackRTM.GetConversationHistory(&historyParams)
 	if err != nil {
 		tui.Debugf("could not load history: %s", err.Error())
 		return
 	}
 
+	tui.Debugf("loaded %d messages from history", len(history.Messages))
 	tui.chatWidget.Clear()
+	tui.Debugf("after clear")
 
 	for _, message := range history.Messages {
 		timestampFloat, err := strconv.ParseFloat(message.Timestamp, 64)
 		if err != nil {
-			// TODO log conversion error
-			continue
+			timestampFloat = 0.0
+			// TODO log error
 		}
 
 		timestamp := time.Unix(int64(timestampFloat), 0)
@@ -188,6 +195,7 @@ func (tui *TUI) switchChannel(channelKey string) {
 			Timestamp: timestamp,
 		})
 	}
+	tui.Debugf("after loop")
 
 }
 
@@ -205,7 +213,10 @@ func (tui *TUI) OnEnter(e event.Event) {
 		return
 	}
 
-	tui.Debugf("message: %s", message)
+	if tui.activeChannelKey == "" {
+		tui.Debugf("warning: you are not in a channel")
+		tui.Debugf("%s", message)
+	}
 }
 
 // OnUnhandledEvent handles any event that is not handled by other handlers
