@@ -1,12 +1,15 @@
 package slk
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/lk16/slk/internal/event"
 	"github.com/lk16/slk/internal/models"
@@ -24,6 +27,7 @@ type Flags struct {
 	configPath   string
 	listUsers    bool
 	listChannels bool
+	catToChannel string
 
 	// TODO remove
 	tui bool
@@ -54,6 +58,7 @@ func NewSlk(cmdLineArgs []string) (*Slk, error) {
 	flagSet.BoolVar(&slk.flags.listUsers, "ls-users", false, "list all users and exit")
 	flagSet.BoolVar(&slk.flags.listChannels, "ls-channels", false, "list all channels and exit")
 	flagSet.BoolVar(&slk.flags.tui, "tui", false, "don't connect to slack, run tui and exit")
+	flagSet.StringVar(&slk.flags.catToChannel, "ch-cat", "", "write messages to channel from standard input line-by-line")
 
 	if err := flagSet.Parse(cmdLineArgs); err != nil {
 		return nil, errors.Wrap(err, "parsing commandline arguments failed")
@@ -198,12 +203,51 @@ func (client *cookieHTTPClient) Do(request *http.Request) (*http.Response, error
 	return http.DefaultClient.Do(request)
 }
 
+// CatToChannel writes line by line from standard input to a channel
+func (slk *Slk) CatToChannel() error {
+
+	channel := slk.flags.catToChannel
+
+	timestamp := fmt.Sprintf("%d.000000", time.Now().Unix()-1000)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		message := slk.client.NewOutgoingMessage(scanner.Text(), channel)
+		slk.client.SendMessage(message)
+	}
+
+	// We update the timestamp first before checking if the scanner failed.
+	// This way we can still update the read mark, if only part of the messages went through.
+
+	// TODO this doesn't work
+
+	time.Sleep(2 * time.Second)
+
+	log.Printf("timestamp = %s\n", timestamp)
+	err := slk.client.SetGroupReadMark(channel, timestamp)
+	if err != nil {
+		return errors.Wrap(err, "could not update channel-read timestamp")
+	}
+
+	err = scanner.Err()
+	if err != nil {
+		return errors.Wrapf(err, "reading from stdin failed")
+	}
+
+	err = slk.client.Disconnect()
+	if err != nil {
+		return errors.Wrapf(err, "disconnecting or flushing messages failed")
+	}
+
+	return nil
+}
+
 // Run runs the slk application as configured
 func (slk *Slk) Run() error {
 
 	httpClient := &cookieHTTPClient{cookieValue: slk.config.Cookie}
 
-	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
+	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient), slack.OptionDebug(true))
 	slk.client = api.NewRTM()
 
 	if slk.flags.listUsers {
@@ -215,6 +259,12 @@ func (slk *Slk) Run() error {
 	}
 
 	go slk.client.ManageConnection()
+
+	time.Sleep(2 * time.Second)
+
+	if slk.flags.catToChannel != "" {
+		return slk.CatToChannel()
+	}
 
 	tui, err := NewTUI(slk.client)
 	if err != nil {

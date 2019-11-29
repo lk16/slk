@@ -4,6 +4,10 @@
 - [ ] Docs 
     - [ ] README setup section
 - [ ] Tests
+- [ ] cat-to-channel 
+    - [x] basic functionality
+    - [ ] use channel name instead of ID
+    - [ ] mark new messages as unread
 - [ ] Actual TUI
     - [ ] Input widget
         - [x] entering/submitting messages
