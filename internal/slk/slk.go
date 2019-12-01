@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -208,25 +207,52 @@ func (slk *Slk) CatToChannel() error {
 
 	channel := slk.flags.catToChannel
 
-	timestamp := fmt.Sprintf("%d.000000", time.Now().Unix()-1000)
+	// we cannot mark our own message unread
+	// instead we mark the last message from any other person as unread
+	// this way we can still notify ourselves with our own message
+
+	historyParams := slack.GetConversationHistoryParameters{
+		ChannelID: channel,
+		Limit:     100,
+		Inclusive: false,
+	}
+
+	var mySlackID string
+
+	// TODO this is the worst hack
+	for incomingEvent := range slk.client.IncomingEvents {
+		if connectedEvent, ok := incomingEvent.Data.(*slack.ConnectedEvent); ok {
+			mySlackID = connectedEvent.Info.User.ID
+			break
+		}
+	}
+
+	history, err := slk.client.GetConversationHistory(&historyParams)
+	if err != nil {
+		return errors.Wrap(err, "could not get chat history")
+	}
+
+	// find first message that's not mine
+	// TODO HACK slack timestamps are strings so we use the lexicographical < operator here
+
+	var lastTimeStamp string
+
+	for i := len(history.Messages) - 1; i >= 0; i-- {
+		historyMessage := history.Messages[i]
+		if historyMessage.User == mySlackID || historyMessage.Msg.Text == "" {
+			continue
+		}
+		ts := historyMessage.Msg.Timestamp
+		if lastTimeStamp == "" || ts > lastTimeStamp {
+			lastTimeStamp = ts
+		}
+	}
+
+	slk.client.SetGroupReadMark(channel, lastTimeStamp)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		message := slk.client.NewOutgoingMessage(scanner.Text(), channel)
-		slk.client.SendMessage(message)
-	}
-
-	// We update the timestamp first before checking if the scanner failed.
-	// This way we can still update the read mark, if only part of the messages went through.
-
-	// TODO this doesn't work
-
-	time.Sleep(2 * time.Second)
-
-	log.Printf("timestamp = %s\n", timestamp)
-	err := slk.client.SetGroupReadMark(channel, timestamp)
-	if err != nil {
-		return errors.Wrap(err, "could not update channel-read timestamp")
+		slk.client.PostMessage(channel, slack.MsgOptionText(scanner.Text(), false), slack.MsgOptionBroadcast())
 	}
 
 	err = scanner.Err()
@@ -247,7 +273,7 @@ func (slk *Slk) Run() error {
 
 	httpClient := &cookieHTTPClient{cookieValue: slk.config.Cookie}
 
-	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient), slack.OptionDebug(true))
+	api := slack.New(slk.config.APIToken, slack.OptionHTTPClient(httpClient))
 	slk.client = api.NewRTM()
 
 	if slk.flags.listUsers {

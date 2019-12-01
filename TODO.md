@@ -7,7 +7,8 @@
 - [ ] cat-to-channel 
     - [x] basic functionality
     - [ ] use channel name instead of ID
-    - [ ] mark new messages as unread
+    - [x] mark new messages as unread
+    - [ ] remove all HACKs
 - [ ] Actual TUI
     - [ ] Input widget
         - [x] entering/submitting messages
