@@ -2,6 +2,7 @@ package slk
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -248,16 +249,50 @@ func (slk *Slk) CatToChannel() error {
 		}
 	}
 
-	slk.client.SetGroupReadMark(channel, lastTimeStamp)
-
 	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		slk.client.PostMessage(channel, slack.MsgOptionText(scanner.Text(), false), slack.MsgOptionBroadcast())
+	var textBuff bytes.Buffer
+	var lineCount int
+	lastFlush := time.Now()
+	flushTimeout := time.Second
+
+	flush := func() {
+		slk.client.PostMessage(channel, slack.MsgOptionText(textBuff.String(), false), slack.MsgOptionBroadcast())
+		textBuff.Reset()
+		lineCount = 0
+		lastFlush = time.Now()
+	}
+
+	// TODO BUG this needs channels to wait for a timeout
+	// lastflush is only checked when a message comes in
+	// if no message is incoming pending messages may have to wait forever to be flushed
+
+	for {
+		scan := scanner.Scan()
+
+		if !scan {
+			flush()
+			break
+		}
+
+		if lineCount != 0 {
+			textBuff.WriteRune('\n')
+		}
+		textBuff.WriteString(scanner.Text())
+		lineCount++
+
+		if textBuff.Len() > 2048 || lineCount == 16 || !scan || (time.Since(lastFlush) > flushTimeout && lineCount > 0) {
+			flush()
+		}
 	}
 
 	err = scanner.Err()
 	if err != nil {
 		return errors.Wrapf(err, "reading from stdin failed")
+	}
+
+	err = slk.client.SetGroupReadMark(channel, lastTimeStamp)
+	if err != nil {
+		return errors.Wrap(err, "setting read mark failed")
 	}
 
 	err = slk.client.Disconnect()
